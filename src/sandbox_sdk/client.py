@@ -8,7 +8,8 @@ from types import TracebackType
 from sandbox_sdk.backend import SandboxBackend
 from sandbox_sdk.errors import SandboxClosedError
 from sandbox_sdk.filesystem import AsyncSandboxFilesystem
-from sandbox_sdk.models import SandboxConfig
+from sandbox_sdk.models import ProcessOptions, ProcessResult, SandboxConfig
+from sandbox_sdk.process import AsyncSandboxProcess
 
 
 class AsyncSandbox:
@@ -45,6 +46,39 @@ class AsyncSandbox:
         if not self._closed:
             self._closed = True
             await self._backend.stop(self._id)
+
+    async def run(
+        self,
+        args: list[str] | tuple[str, ...],
+        *,
+        cwd: str | None = None,
+        env: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+        check: bool = False,
+    ) -> ProcessResult:
+        """Run a command to completion and capture stdout and stderr."""
+        if self._closed:
+            raise SandboxClosedError("Cannot run a process on a closed sandbox.")
+        options = ProcessOptions(tuple(args), cwd=cwd, env=env)
+        result = await self._backend.run_process(self._id, options, timeout)
+        if check:
+            result.check_returncode()
+        return result
+
+    async def start(
+        self,
+        args: list[str] | tuple[str, ...],
+        *,
+        cwd: str | None = None,
+        env: Mapping[str, str] | None = None,
+        detached: bool = False,
+    ) -> AsyncSandboxProcess:
+        """Start a long-running process and return a Popen-like handle."""
+        if self._closed:
+            raise SandboxClosedError("Cannot start a process on a closed sandbox.")
+        options = ProcessOptions(tuple(args), cwd=cwd, env=env)
+        process_id = await self._backend.start_process(self._id, options)
+        return AsyncSandboxProcess(self._backend, self._id, process_id, options, detached=detached)
 
     async def __aenter__(self) -> AsyncSandbox:
         return self

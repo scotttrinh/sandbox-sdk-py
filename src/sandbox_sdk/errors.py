@@ -29,3 +29,7 @@ class SandboxFilesystemError(SandboxError):
 
 class SandboxClosedError(SandboxError):
     """Raised when attempting an operation on a closed sandbox."""
+
+
+class SandboxProcessError(SandboxError):
+    """Raised when a sandbox process cannot be started or inspected."""

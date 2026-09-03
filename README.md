@@ -9,6 +9,7 @@ Generic Python SDK for sandbox-like execution environments (Docker, Vercel Sandb
 - **Natural Connection Context Managers**: `with connect(...)` or `async with connect(...)` handles starting, running, and automatic stopping/destruction of the sandbox.
 - **AnyIO Async Primitives**: Native support for AnyIO concurrency primitives.
 - **Sync & Async Parity**: First-class synchronous API (`connect_sync`) alongside the asynchronous API (`connect`).
+- **Short & Long-Running Processes**: `run()` mirrors `subprocess.run`, while `start()` returns a Popen-like handle with polling, waiting, termination, and explicit detachment.
 - **Designed for Iter-Coroutine Shared Backends**: Ready for unification of sync and async execution via coroutine driver patterns.
 - **Docker Adapter**: Local sandbox execution backed by Docker.
 - **Strict Typing & Quality**: Verified with `ty`, `ruff`, `poethepoet`, `pytest`, and property-based testing with `hypothesis`.
@@ -68,11 +69,46 @@ if __name__ == "__main__":
 
 ## Architecture
 
-- **`SandboxBackend` protocol**: Defines the minimal contract (`start`, `stop`, `write_bytes`, `read_bytes`) required for any provider.
+- **`SandboxBackend` protocol**: Defines provider-neutral lifecycle, filesystem, and process capabilities.
 - **`DockerSandboxBackend`**: Default local adapter bridging Docker via AnyIO worker threads (`anyio.to_thread.run_sync`).
 - **`AsyncSandbox` / `SyncSandbox`**: High-level facades providing Python stdlib-style `open()` context managers and lifecycle management.
 - **`AsyncSandboxFile` / `SyncSandboxFile`**: File-like handle implementations with buffer streaming, reading, writing, flushing, and line iteration.
 - **`_internal.iter_coroutine`**: Driver for executing transport-agnostic coroutines synchronously without suspending.
+
+## Execute an Uploaded Script
+
+The result uses bytes by default, like `subprocess.run`, so it can be streamed directly into a
+local binary file:
+
+```python
+from pathlib import Path
+
+from sandbox_sdk import connect_sync
+
+script = b'''from datetime import date
+print(f"{date.today()} | NYC | Clear | 24 C")
+'''
+
+with connect_sync(image="python:3.13-alpine") as sandbox:
+    sandbox.fs.write_bytes("/workspace/weather.py", script)
+    result = sandbox.run(
+        ["python", "weather.py"], cwd="/workspace", check=True
+    )
+
+with Path("weather-history.txt").open("ab") as report:
+    report.write(result.stdout)
+```
+
+For longer-running work, `start()` returns a process handle. A normal process context manager
+terminates a still-running process on exit. Pass `detached=True` when the process should outlive
+the handle, then retain the handle to poll or wait for it later:
+
+```python
+with connect_sync() as sandbox:
+    with sandbox.start(["sh", "-c", "sleep 1; echo ready"], detached=True) as process:
+        pass
+    result = process.wait(timeout=5)
+```
 
 ## Development & Verification
 

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import io
 import os
+import shlex
 import tarfile
 import time
+import uuid
 from typing import TYPE_CHECKING
 
 import anyio
@@ -16,8 +18,10 @@ from sandbox_sdk.errors import (
     SandboxConnectionError,
     SandboxFilesystemError,
     SandboxPathNotFoundError,
+    SandboxProcessError,
+    SandboxTimeoutError,
 )
-from sandbox_sdk.models import SandboxConfig
+from sandbox_sdk.models import ProcessOptions, ProcessResult, SandboxConfig
 
 if TYPE_CHECKING:
     import docker
@@ -159,3 +163,135 @@ class DockerSandboxBackend(SandboxBackend):
                 raise SandboxFilesystemError(f"Error extracting {path} from tar: {err}") from err
 
         return await anyio.to_thread.run_sync(_sync_read)
+
+    @staticmethod
+    def _command(options: ProcessOptions) -> str:
+        if not options.args:
+            raise ValueError("args must contain at least one item")
+        command = shlex.join(options.args)
+        if options.env:
+            assignments = " ".join(
+                shlex.quote(f"{key}={value}") for key, value in options.env.items()
+            )
+            command = f"env {assignments} {command}"
+        if options.cwd is not None:
+            command = f"cd {shlex.quote(options.cwd)} && {command}"
+        return command
+
+    async def run_process(
+        self, sandbox_id: str, options: ProcessOptions, timeout: float | None = None
+    ) -> ProcessResult:
+        """Execute a command in the container and capture both output streams."""
+        process_id = await self.start_process(sandbox_id, options)
+        try:
+            result = await self.wait_process(sandbox_id, process_id, timeout)
+        except SandboxTimeoutError:
+            await self.terminate_process(sandbox_id, process_id)
+            await self.wait_process(sandbox_id, process_id)
+            raise
+        return ProcessResult(options.args, result.returncode, result.stdout, result.stderr)
+
+    async def start_process(self, sandbox_id: str, options: ProcessOptions) -> str:
+        """Start a command using files for provider-independent deferred collection."""
+        process_id = uuid.uuid4().hex
+        process_dir = f"/tmp/.sandbox-sdk-processes/{process_id}"
+        command = self._command(options)
+        wrapper = (
+            f"mkdir -p {process_dir}; "
+            f"({command}) >{process_dir}/stdout 2>{process_dir}/stderr & "
+            f"child=$!; echo $child >{process_dir}/pid; "
+            f"wait $child; echo $? >{process_dir}/returncode"
+        )
+
+        def _sync_start() -> None:
+            try:
+                container = self._get_client().containers.get(sandbox_id)
+                container.exec_run(["/bin/sh", "-c", wrapper], detach=True)
+            except Exception as err:
+                raise SandboxProcessError(f"Failed to start {options.args!r}: {err}") from err
+
+        await anyio.to_thread.run_sync(_sync_start)
+        return process_id
+
+    async def poll_process(self, sandbox_id: str, process_id: str) -> int | None:
+        """Read a process return-code sentinel when present."""
+        process_dir = f"/tmp/.sandbox-sdk-processes/{process_id}"
+
+        def _sync_poll() -> int | None:
+            try:
+                container = self._get_client().containers.get(sandbox_id)
+                result = container.exec_run(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        f"test -f {process_dir}/returncode && cat {process_dir}/returncode",
+                    ]
+                )
+            except Exception as err:
+                raise SandboxProcessError(f"Failed to inspect process {process_id}: {err}") from err
+            if result.exit_code != 0:
+                return None
+            try:
+                return int(result.output.strip())
+            except ValueError as err:
+                raise SandboxProcessError(f"Invalid state for process {process_id}") from err
+
+        return await anyio.to_thread.run_sync(_sync_poll)
+
+    async def wait_process(
+        self, sandbox_id: str, process_id: str, timeout: float | None = None
+    ) -> ProcessResult:
+        """Wait for a deferred command and collect its captured output."""
+        process_dir = f"/tmp/.sandbox-sdk-processes/{process_id}"
+
+        async def _wait() -> ProcessResult:
+            while (returncode := await self.poll_process(sandbox_id, process_id)) is None:
+                await anyio.sleep(0.05)
+
+            def _sync_collect() -> tuple[bytes, bytes]:
+                try:
+                    container = self._get_client().containers.get(sandbox_id)
+                    stdout = container.exec_run(["cat", f"{process_dir}/stdout"]).output
+                    stderr = container.exec_run(["cat", f"{process_dir}/stderr"]).output
+                    return stdout, stderr
+                except Exception as err:
+                    raise SandboxProcessError(
+                        f"Failed to collect process {process_id}: {err}"
+                    ) from err
+
+            stdout, stderr = await anyio.to_thread.run_sync(_sync_collect)
+            return ProcessResult((), returncode, stdout, stderr)
+
+        try:
+            if timeout is None:
+                return await _wait()
+            with anyio.fail_after(timeout):
+                return await _wait()
+        except TimeoutError as err:
+            raise SandboxTimeoutError(f"Process timed out after {timeout} seconds") from err
+
+    async def terminate_process(self, sandbox_id: str, process_id: str) -> None:
+        """Send SIGTERM to a deferred command."""
+        process_dir = f"/tmp/.sandbox-sdk-processes/{process_id}"
+
+        def _sync_terminate() -> None:
+            try:
+                container = self._get_client().containers.get(sandbox_id)
+                result = container.exec_run(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        f"while ! test -f {process_dir}/pid; do sleep 0.01; done; "
+                        f"kill $(cat {process_dir}/pid)",
+                    ]
+                )
+                if result.exit_code != 0:
+                    raise SandboxProcessError(f"Process {process_id} could not be terminated")
+            except SandboxProcessError:
+                raise
+            except Exception as err:
+                raise SandboxProcessError(
+                    f"Failed to terminate process {process_id}: {err}"
+                ) from err
+
+        await anyio.to_thread.run_sync(_sync_terminate)

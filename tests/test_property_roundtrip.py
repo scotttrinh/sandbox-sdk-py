@@ -9,7 +9,7 @@ from hypothesis import strategies as st
 from sandbox_sdk.backend import SandboxBackend
 from sandbox_sdk.client import connect
 from sandbox_sdk.errors import SandboxPathNotFoundError
-from sandbox_sdk.models import SandboxConfig
+from sandbox_sdk.models import ProcessOptions, ProcessResult, SandboxConfig
 
 
 class InMemoryMockBackend(SandboxBackend):
@@ -41,6 +41,25 @@ class InMemoryMockBackend(SandboxBackend):
         if path not in self.files[sandbox_id]:
             raise SandboxPathNotFoundError(path)
         return self.files[sandbox_id][path]
+
+    async def run_process(
+        self, sandbox_id: str, options: ProcessOptions, timeout: float | None = None
+    ) -> ProcessResult:
+        raise NotImplementedError
+
+    async def start_process(self, sandbox_id: str, options: ProcessOptions) -> str:
+        raise NotImplementedError
+
+    async def poll_process(self, sandbox_id: str, process_id: str) -> int | None:
+        raise NotImplementedError
+
+    async def wait_process(
+        self, sandbox_id: str, process_id: str, timeout: float | None = None
+    ) -> ProcessResult:
+        raise NotImplementedError
+
+    async def terminate_process(self, sandbox_id: str, process_id: str) -> None:
+        raise NotImplementedError
 
 
 @settings(max_examples=50)
