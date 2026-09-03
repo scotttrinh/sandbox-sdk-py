@@ -27,7 +27,7 @@ class AsyncSandboxFilesystem:
 
         Returns an async context manager and file object supporting read/write/iteration:
         ```python
-        async with sbx.open("/workspace/data.txt", "w") as f:
+        async with sbx.fs.open("/workspace/data.txt", "w") as f:
             await f.write("hello")
         ```
         """

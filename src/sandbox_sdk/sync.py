@@ -27,7 +27,7 @@ class SyncSandboxFilesystem:
         encoding: str = "utf-8",
     ) -> SyncSandboxFile:
         """Open a file inside the sandbox using stdlib open() semantics."""
-        async_file = self._async_sandbox.open(path, mode=mode, encoding=encoding)
+        async_file = self._async_sandbox.fs.open(path, mode=mode, encoding=encoding)
         return SyncSandboxFile(async_file)
 
     def write_bytes(self, path: str, data: bytes) -> None:
@@ -63,15 +63,6 @@ class SyncSandbox:
         if self._async_sandbox._closed:
             raise SandboxClosedError("Cannot access filesystem on a closed sandbox.")
         return self._fs
-
-    def open(
-        self,
-        path: str,
-        mode: str = "r",
-        encoding: str = "utf-8",
-    ) -> SyncSandboxFile:
-        """Open a file in the sandbox using stdlib open() semantics."""
-        return self.fs.open(path, mode=mode, encoding=encoding)
 
     def close(self) -> None:
         anyio.run(self._async_sandbox.close)
@@ -144,9 +135,9 @@ def connect_sync(
     Example:
     ```python
     with sandbox.connect_sync() as sbx:
-        with sbx.open("/data.txt", "w") as f:
+        with sbx.fs.open("/data.txt", "w") as f:
             f.write("hello")
-        with sbx.open("/data.txt", "r") as f:
+        with sbx.fs.open("/data.txt", "r") as f:
             assert f.read() == "hello"
     ```
     """

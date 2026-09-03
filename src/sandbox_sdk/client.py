@@ -7,7 +7,6 @@ from types import TracebackType
 
 from sandbox_sdk.backend import SandboxBackend
 from sandbox_sdk.errors import SandboxClosedError
-from sandbox_sdk.file import AsyncSandboxFile
 from sandbox_sdk.filesystem import AsyncSandboxFilesystem
 from sandbox_sdk.models import SandboxConfig
 
@@ -40,17 +39,6 @@ class AsyncSandbox:
         if self._closed:
             raise SandboxClosedError("Cannot access filesystem on a closed sandbox.")
         return self._fs
-
-    def open(
-        self,
-        path: str,
-        mode: str = "r",
-        encoding: str = "utf-8",
-    ) -> AsyncSandboxFile:
-        """Open a file in the sandbox using stdlib open() semantics."""
-        if self._closed:
-            raise SandboxClosedError("Cannot open files in a closed sandbox.")
-        return self._fs.open(path, mode=mode, encoding=encoding)
 
     async def close(self) -> None:
         """Stop and clean up the sandbox."""
@@ -141,9 +129,9 @@ def connect(
     Example:
     ```python
     async with sandbox.connect() as sbx:
-        async with sbx.open("/data.txt", "w") as f:
+        async with sbx.fs.open("/data.txt", "w") as f:
             await f.write("hello world")
-        async with sbx.open("/data.txt", "r") as f:
+        async with sbx.fs.open("/data.txt", "r") as f:
             assert await f.read() == "hello world"
     ```
     """

@@ -5,7 +5,7 @@ Generic Python SDK for sandbox-like execution environments (Docker, Vercel Sandb
 ## Features
 
 - **Generic & Extensible**: Decoupled from provider-specific assumptions via the `SandboxBackend` protocol.
-- **Pythonic Stdlib Metaphors**: File operations use `with sbx.open(path, "w") as f` / `async with sbx.open(...)` context managers, line-iteration, and flushing just like Python's built-in file handles.
+- **Pythonic Stdlib Metaphors**: File operations use `with sbx.fs.open(path, "w") as f` / `async with sbx.fs.open(...)` context managers, line-iteration, and flushing just like Python's built-in file handles.
 - **Natural Connection Context Managers**: `with connect(...)` or `async with connect(...)` handles starting, running, and automatic stopping/destruction of the sandbox.
 - **AnyIO Async Primitives**: Native support for AnyIO concurrency primitives.
 - **Sync & Async Parity**: First-class synchronous API (`connect_sync`) alongside the asynchronous API (`connect`).
@@ -36,12 +36,12 @@ from sandbox_sdk import connect
 async def main() -> None:
     # Connect to a sandbox (starts container and automatically cleans up on exit)
     async with connect(image="alpine:latest") as sbx:
-        # Standard open() context manager for writing
-        async with sbx.open("/workspace/hello.txt", "w") as f:
+        # Standard open() context manager on the filesystem interface
+        async with sbx.fs.open("/workspace/hello.txt", "w") as f:
             await f.write("Hello from Sandbox SDK!\n")
 
         # Standard open() context manager for reading
-        async with sbx.open("/workspace/hello.txt", "r") as f:
+        async with sbx.fs.open("/workspace/hello.txt", "r") as f:
             content = await f.read()
             print(content)
 
@@ -55,10 +55,10 @@ from sandbox_sdk import connect_sync
 
 def main() -> None:
     with connect_sync(image="alpine:latest") as sbx:
-        with sbx.open("/workspace/hello.txt", "w") as f:
+        with sbx.fs.open("/workspace/hello.txt", "w") as f:
             f.write("Hello from sync Sandbox!\n")
 
-        with sbx.open("/workspace/hello.txt", "r") as f:
+        with sbx.fs.open("/workspace/hello.txt", "r") as f:
             content = f.read()
             print(content)
 

@@ -28,9 +28,9 @@ async def test_async_await_without_context_manager() -> None:
     sbx = await connect(backend=backend)
     try:
         assert sbx.id in backend.running
-        async with sbx.open("/file.txt", "w") as f:
+        async with sbx.fs.open("/file.txt", "w") as f:
             await f.write("content")
-        async with sbx.open("/file.txt", "r") as f:
+        async with sbx.fs.open("/file.txt", "r") as f:
             assert await f.read() == "content"
     finally:
         await sbx.close()
@@ -48,9 +48,6 @@ async def test_closed_sandbox_access_raises_error() -> None:
     with pytest.raises(SandboxClosedError):
         _ = sbx.fs
 
-    with pytest.raises(SandboxClosedError):
-        _ = sbx.open("/test.txt", "r")
-
 
 def test_sync_connect_without_context_manager() -> None:
     """Using sync connect().connect() creates a sandbox that remains open until closed."""
@@ -59,9 +56,9 @@ def test_sync_connect_without_context_manager() -> None:
     sbx = op.connect()
     try:
         assert sbx.id in backend.running
-        with sbx.open("/file.txt", "w") as f:
+        with sbx.fs.open("/file.txt", "w") as f:
             f.write("sync content")
-        with sbx.open("/file.txt", "r") as f:
+        with sbx.fs.open("/file.txt", "r") as f:
             assert f.read() == "sync content"
     finally:
         sbx.close()
@@ -74,10 +71,10 @@ async def test_file_mode_and_closed_errors() -> None:
     """Check writing to a read-only open file raises SandboxFilesystemError."""
     backend = InMemoryMockBackend()
     async with connect(backend=backend) as sbx:
-        async with sbx.open("/test.txt", "w") as f:
+        async with sbx.fs.open("/test.txt", "w") as f:
             await f.write("initial")
 
-        async with sbx.open("/test.txt", "r") as f:
+        async with sbx.fs.open("/test.txt", "r") as f:
             with pytest.raises(SandboxFilesystemError, match="File not open for writing"):
                 await f.write("should fail")
 

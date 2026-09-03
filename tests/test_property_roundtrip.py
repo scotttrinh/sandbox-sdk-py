@@ -50,13 +50,13 @@ class InMemoryMockBackend(SandboxBackend):
 )
 @pytest.mark.anyio
 async def test_property_roundtrip_text_open(path: str, content: str) -> None:
-    """Any valid utf-8 string written with open('w') is read back with open('r')."""
+    """Any valid utf-8 string written with fs.open('w') is read back with fs.open('r')."""
     backend = InMemoryMockBackend()
     async with connect(backend=backend) as sbx:
-        async with sbx.open(path, "w") as f:
+        async with sbx.fs.open(path, "w") as f:
             await f.write(content)
 
-        async with sbx.open(path, "r") as f:
+        async with sbx.fs.open(path, "r") as f:
             assert await f.read() == content
 
 
@@ -67,11 +67,11 @@ async def test_property_roundtrip_text_open(path: str, content: str) -> None:
 )
 @pytest.mark.anyio
 async def test_property_roundtrip_binary_open(path: str, content: bytes) -> None:
-    """Any binary data written with open('wb') is read back with open('rb')."""
+    """Any binary data written with fs.open('wb') is read back with fs.open('rb')."""
     backend = InMemoryMockBackend()
     async with connect(backend=backend) as sbx:
-        async with sbx.open(path, "wb") as f:
+        async with sbx.fs.open(path, "wb") as f:
             await f.write(content)
 
-        async with sbx.open(path, "rb") as f:
+        async with sbx.fs.open(path, "rb") as f:
             assert await f.read() == content
