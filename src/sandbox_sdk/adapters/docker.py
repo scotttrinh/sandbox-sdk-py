@@ -8,7 +8,7 @@ import shlex
 import tarfile
 import time
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import anyio
 import anyio.to_thread
@@ -21,7 +21,12 @@ from sandbox_sdk.errors import (
     SandboxProcessError,
     SandboxTimeoutError,
 )
-from sandbox_sdk.models import ProcessOptions, ProcessResult, SandboxConfig
+from sandbox_sdk.models import (
+    ProcessOptions,
+    ProcessOutputChunk,
+    ProcessResult,
+    SandboxConfig,
+)
 
 if TYPE_CHECKING:
     import docker
@@ -295,3 +300,39 @@ class DockerSandboxBackend(SandboxBackend):
                 ) from err
 
         await anyio.to_thread.run_sync(_sync_terminate)
+
+    async def read_process_output(
+        self,
+        sandbox_id: str,
+        process_id: str,
+        stream: Literal["stdout", "stderr"],
+        offset: int,
+        max_bytes: int,
+    ) -> ProcessOutputChunk:
+        """Wait for and read the next available output chunk."""
+        process_dir = f"/tmp/.sandbox-sdk-processes/{process_id}"
+
+        def _sync_read() -> ProcessOutputChunk:
+            try:
+                container = self._get_client().containers.get(sandbox_id)
+                result = container.exec_run(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        f"dd if={process_dir}/{stream} bs=1 skip={offset} count={max_bytes} "
+                        f"2>/dev/null; test -f {process_dir}/returncode",
+                    ],
+                    demux=True,
+                )
+            except Exception as err:
+                raise SandboxProcessError(
+                    f"Failed to read {stream} for process {process_id}: {err}"
+                ) from err
+            stdout, _stderr = result.output or (b"", b"")
+            return ProcessOutputChunk(stdout or b"", result.exit_code == 0)
+
+        while True:
+            chunk = await anyio.to_thread.run_sync(_sync_read)
+            if chunk.data or chunk.eof:
+                return chunk
+            await anyio.sleep(0.05)

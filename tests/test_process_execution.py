@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 
+import anyio
 import pytest
 
 from sandbox_sdk import SandboxTimeoutError, connect, connect_sync
@@ -51,6 +52,30 @@ async def test_wait_for_long_running_process_and_capture_separate_streams() -> N
         assert process.returncode == 7
 
 
+@pytest.mark.anyio
+async def test_stdout_and_stderr_are_anyio_byte_streams() -> None:
+    async with connect(image="alpine:latest") as sandbox:
+        process = await sandbox.start(
+            [
+                "sh",
+                "-c",
+                "printf first; sleep 0.1; printf second; printf warning >&2",
+            ]
+        )
+
+        assert await process.stdout.receive(5) == b"first"
+        assert await process.stdout.receive() == b"second"
+        with pytest.raises(anyio.EndOfStream):
+            await process.stdout.receive()
+        assert await process.stderr.receive() == b"warning"
+        with pytest.raises(anyio.EndOfStream):
+            await process.stderr.receive()
+
+        completed = await process.wait()
+        assert completed.stdout == b"firstsecond"
+        assert completed.stderr == b"warning"
+
+
 def test_detached_process_survives_handle_context() -> None:
     with connect_sync(image="alpine:latest") as sandbox:
         with sandbox.start(["sh", "-c", "sleep 0.1; printf detached"], detached=True) as process:
@@ -60,13 +85,33 @@ def test_detached_process_survives_handle_context() -> None:
         assert completed.stdout == b"detached"
 
 
-def test_process_context_terminates_owned_process() -> None:
+def test_process_context_waits_on_normal_exit() -> None:
     with connect_sync(image="alpine:latest") as sandbox:
-        with sandbox.start(["sleep", "30"]) as process:
+        with sandbox.start(["sh", "-c", "sleep 0.1; printf finished"]) as process:
             assert process.poll() is None
+
+        assert process.returncode == 0
+        assert process.wait().stdout == b"finished"
+
+
+def test_process_context_terminates_on_exception() -> None:
+    with connect_sync(image="alpine:latest") as sandbox:
+        with pytest.raises(RuntimeError, match="abort work"):
+            with sandbox.start(["sleep", "30"]) as process:
+                raise RuntimeError("abort work")
 
         assert process.returncode is not None
         assert process.returncode != 0
+
+
+def test_sync_output_stream() -> None:
+    with connect_sync(image="alpine:latest") as sandbox:
+        process = sandbox.start(["sh", "-c", "printf streamed"])
+        assert process.stdout.receive(4) == b"stre"
+        assert process.stdout.receive() == b"amed"
+        with pytest.raises(anyio.EndOfStream):
+            process.stdout.receive()
+        process.wait()
 
 
 def test_check_and_timeout_follow_subprocess_conventions() -> None:

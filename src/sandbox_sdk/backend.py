@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
-from sandbox_sdk.models import ProcessOptions, ProcessResult, SandboxConfig
+from sandbox_sdk.models import ProcessOptions, ProcessOutputChunk, ProcessResult, SandboxConfig
 
 
 @runtime_checkable
@@ -53,6 +53,17 @@ class SandboxBackend(Protocol):
         self, sandbox_id: str, process_id: str, timeout: float | None = None
     ) -> ProcessResult:
         """Wait for a started process and capture its output."""
+        ...
+
+    async def read_process_output(
+        self,
+        sandbox_id: str,
+        process_id: str,
+        stream: Literal["stdout", "stderr"],
+        offset: int,
+        max_bytes: int,
+    ) -> ProcessOutputChunk:
+        """Read the next available chunk from a process output stream."""
         ...
 
     async def terminate_process(self, sandbox_id: str, process_id: str) -> None:

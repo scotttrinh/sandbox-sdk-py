@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from types import TracebackType
 
 import anyio
+from anyio.abc import ByteReceiveStream
 
 from sandbox_sdk.backend import SandboxBackend
 from sandbox_sdk.client import AsyncSandbox
@@ -16,11 +17,38 @@ from sandbox_sdk.models import ProcessResult
 from sandbox_sdk.process import AsyncSandboxProcess
 
 
+class SyncSandboxProcessOutputStream:
+    """Synchronous view of an AnyIO-style process output stream."""
+
+    def __init__(self, async_stream: ByteReceiveStream) -> None:
+        self._async_stream = async_stream
+
+    def receive(self, max_bytes: int = 65536) -> bytes:
+        """Receive available bytes, raising ``anyio.EndOfStream`` at EOF."""
+        return anyio.run(self._async_stream.receive, max_bytes)
+
+    def close(self) -> None:
+        anyio.run(self._async_stream.aclose)
+
+    def __enter__(self) -> SyncSandboxProcessOutputStream:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
+
 class SyncSandboxProcess:
     """Synchronous Popen-like handle for a sandbox process."""
 
     def __init__(self, async_process: AsyncSandboxProcess) -> None:
         self._async_process = async_process
+        self._stdout = SyncSandboxProcessOutputStream(async_process.stdout)
+        self._stderr = SyncSandboxProcessOutputStream(async_process.stderr)
 
     @property
     def id(self) -> str:
@@ -38,6 +66,14 @@ class SyncSandboxProcess:
     def returncode(self) -> int | None:
         return self._async_process.returncode
 
+    @property
+    def stdout(self) -> SyncSandboxProcessOutputStream:
+        return self._stdout
+
+    @property
+    def stderr(self) -> SyncSandboxProcessOutputStream:
+        return self._stderr
+
     def poll(self) -> int | None:
         return anyio.run(self._async_process.poll)
 
@@ -49,6 +85,9 @@ class SyncSandboxProcess:
 
     def terminate(self) -> None:
         anyio.run(self._async_process.terminate)
+
+    def close(self) -> None:
+        anyio.run(self._async_process.aclose)
 
     def __enter__(self) -> SyncSandboxProcess:
         return self

@@ -99,9 +99,22 @@ with Path("weather-history.txt").open("ab") as report:
     report.write(result.stdout)
 ```
 
-For longer-running work, `start()` returns a process handle. A normal process context manager
-terminates a still-running process on exit. Pass `detached=True` when the process should outlive
-the handle, then retain the handle to poll or wait for it later:
+For longer-running work, `start()` returns an AnyIO-style process handle. Its `stdout` and
+`stderr` properties are independent byte receive streams, and `wait()` still returns the complete
+captured result even after streaming some or all of the output:
+
+```python
+async with connect() as sandbox:
+    process = await sandbox.start(["sh", "-c", "echo ready; echo note >&2"])
+    async for chunk in process.stdout:
+        print(chunk.decode(), end="")
+    result = await process.wait(timeout=5)
+```
+
+A normal process context waits for completion, mirroring AnyIO's process resource. If the context
+body raises or is cancelled, it terminates and reaps the process before propagating the error.
+Pass `detached=True` to transfer cleanup responsibility to the caller; the streams and process
+handle then remain usable after their context exits:
 
 ```python
 with connect_sync() as sandbox:

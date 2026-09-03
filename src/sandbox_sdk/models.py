@@ -44,3 +44,11 @@ class ProcessResult:
                 output=self.stdout,
                 stderr=self.stderr,
             )
+
+
+@dataclass(frozen=True)
+class ProcessOutputChunk:
+    """A chunk read from a process output stream and its end-of-stream state."""
+
+    data: bytes
+    eof: bool
