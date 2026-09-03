@@ -1,4 +1,4 @@
-"""Core sandbox abstraction and context managers."""
+"""Core sandbox abstraction, connection lifecycle, and stdlib metaphors."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from types import TracebackType
 
 from sandbox_sdk.backend import SandboxBackend
 from sandbox_sdk.errors import SandboxClosedError
+from sandbox_sdk.file import AsyncSandboxFile
 from sandbox_sdk.filesystem import AsyncSandboxFilesystem
 from sandbox_sdk.models import SandboxConfig
 
@@ -40,6 +41,17 @@ class AsyncSandbox:
             raise SandboxClosedError("Cannot access filesystem on a closed sandbox.")
         return self._fs
 
+    def open(
+        self,
+        path: str,
+        mode: str = "r",
+        encoding: str = "utf-8",
+    ) -> AsyncSandboxFile:
+        """Open a file in the sandbox using stdlib open() semantics."""
+        if self._closed:
+            raise SandboxClosedError("Cannot open files in a closed sandbox.")
+        return self._fs.open(path, mode=mode, encoding=encoding)
+
     async def close(self) -> None:
         """Stop and clean up the sandbox."""
         if not self._closed:
@@ -61,9 +73,15 @@ class AsyncSandbox:
 class AsyncSandboxConnectOperation:
     """Awaitable and async context manager for connecting to/creating a sandbox.
 
-    Like vercel-py's CreateSandboxOperation:
-    - Awaiting it returns an AsyncSandbox without automatic cleanup on scope exit.
-    - Using `async with` returns an AsyncSandbox and automatically cleans it up on exit.
+    Supports both:
+    ```python
+    # Context manager cleans up automatically on exit:
+    async with sandbox.connect(...) as sbx:
+        ...
+
+    # Direct await keeps the sandbox open until sbx.close():
+    sbx = await sandbox.connect(...)
+    ```
     """
 
     def __init__(
@@ -84,7 +102,7 @@ class AsyncSandboxConnectOperation:
                 backend=self._backend,
                 sandbox_id=sandbox_id,
                 config=self._config,
-                auto_stop=False,  # awaiting does not auto-stop on scope exit
+                auto_stop=False,
             )
 
         return _connect().__await__()
@@ -120,20 +138,14 @@ def connect(
 ) -> AsyncSandboxConnectOperation:
     """Connect to or create a sandbox environment asynchronously.
 
-    Can be awaited directly or used as an asynchronous context manager:
+    Example:
     ```python
-    async with connect() as sbx:
-        await sbx.fs.write_text("/hello.txt", "world")
-        assert await sbx.fs.read_text("/hello.txt") == "world"
+    async with sandbox.connect() as sbx:
+        async with sbx.open("/data.txt", "w") as f:
+            await f.write("hello world")
+        async with sbx.open("/data.txt", "r") as f:
+            assert await f.read() == "hello world"
     ```
-
-    Args:
-        backend: Sandbox backend adapter (defaults to DockerSandboxBackend).
-        image: Container or environment image reference.
-        name: Optional name for the sandbox instance.
-        env: Environment variables to populate in the sandbox.
-        timeout: Operation timeout in seconds.
-        auto_stop: Whether exiting context manager automatically stops the sandbox.
     """
     if backend is None:
         from sandbox_sdk.adapters.docker import DockerSandboxBackend

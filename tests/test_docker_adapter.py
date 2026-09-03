@@ -1,7 +1,4 @@
-"""Outside-in integration test for Docker adapter.
-
-Tests the fundamental flow: connect to sandbox -> write file -> read it back -> clean up.
-"""
+"""Outside-in integration tests for Docker adapter testing stdlib open() context managers."""
 
 from __future__ import annotations
 
@@ -15,48 +12,44 @@ from sandbox_sdk import (
 
 
 @pytest.mark.anyio
-async def test_async_docker_write_and_read_roundtrip() -> None:
-    """Async connect, write file, read it back, verify automatic cleanup."""
-    test_path = "/tmp/test_async.txt"
-    test_content = "Hello from Async Sandbox SDK!"
+async def test_async_docker_open_context_manager_roundtrip() -> None:
+    """Async connect -> async open("w") -> write -> async open("r") -> read back."""
+    test_path = "/tmp/test_open.txt"
+    test_content = "Hello from Async open() context manager!"
 
     async with connect(image="alpine:latest") as sbx:
-        assert sbx.id is not None
-        # Write text
-        await sbx.fs.write_text(test_path, test_content)
+        # Standard open() context manager in write mode
+        async with sbx.open(test_path, "w") as f:
+            assert f.writable()
+            await f.write(test_content)
 
-        # Read text back
-        result = await sbx.fs.read_text(test_path)
-        assert result == test_content
-
-        # Write binary
-        bin_path = "/tmp/test_async.bin"
-        bin_content = b"\x00\x01\x02\x03\xff\xfe"
-        await sbx.fs.write_bytes(bin_path, bin_content)
-
-        # Read binary back
-        bin_result = await sbx.fs.read_bytes(bin_path)
-        assert bin_result == bin_content
+        # Standard open() context manager in read mode
+        async with sbx.open(test_path, "r") as f:
+            assert f.readable()
+            result = await f.read()
+            assert result == test_content
 
 
-def test_sync_docker_write_and_read_roundtrip() -> None:
-    """Sync connect, write file, read it back, verify automatic cleanup."""
-    test_path = "/tmp/test_sync.txt"
-    test_content = "Hello from Sync Sandbox SDK!"
+def test_sync_docker_open_context_manager_roundtrip() -> None:
+    """Sync connect_sync -> open("wb") -> write -> open("rb") -> read back."""
+    test_path = "/tmp/test_sync_open.bin"
+    test_content = b"\xde\xad\xbe\xef\x01\x02\x03\x04"
 
     with connect_sync(image="alpine:latest") as sbx:
-        assert sbx.id is not None
-        # Write text
-        sbx.fs.write_text(test_path, test_content)
+        with sbx.open(test_path, "wb") as f:
+            assert f.writable()
+            f.write(test_content)
 
-        # Read text back
-        result = sbx.fs.read_text(test_path)
-        assert result == test_content
+        with sbx.open(test_path, "rb") as f:
+            assert f.readable()
+            result = f.read()
+            assert result == test_content
 
 
 @pytest.mark.anyio
 async def test_read_non_existent_file_raises_not_found() -> None:
-    """Reading a file that does not exist should raise SandboxPathNotFoundError."""
+    """Opening non-existent file in read mode raises SandboxPathNotFoundError."""
     async with connect(image="alpine:latest") as sbx:
         with pytest.raises(SandboxPathNotFoundError):
-            await sbx.fs.read_bytes("/non_existent_path/should_fail.txt")
+            async with sbx.open("/non_existent/missing.txt", "r"):
+                pass

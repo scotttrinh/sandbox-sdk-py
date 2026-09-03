@@ -1,4 +1,4 @@
-"""Hypothesis property-based tests for filesystem write and read roundtrip."""
+"""Hypothesis property-based tests for filesystem open() write and read roundtrip."""
 
 from __future__ import annotations
 
@@ -49,12 +49,15 @@ class InMemoryMockBackend(SandboxBackend):
     content=st.text(),
 )
 @pytest.mark.anyio
-async def test_property_roundtrip_text(path: str, content: str) -> None:
-    """Any valid utf-8 string written to any path should be read back identical."""
+async def test_property_roundtrip_text_open(path: str, content: str) -> None:
+    """Any valid utf-8 string written with open('w') is read back with open('r')."""
     backend = InMemoryMockBackend()
     async with connect(backend=backend) as sbx:
-        await sbx.fs.write_text(path, content)
-        assert await sbx.fs.read_text(path) == content
+        async with sbx.open(path, "w") as f:
+            await f.write(content)
+
+        async with sbx.open(path, "r") as f:
+            assert await f.read() == content
 
 
 @settings(max_examples=50)
@@ -63,9 +66,12 @@ async def test_property_roundtrip_text(path: str, content: str) -> None:
     content=st.binary(),
 )
 @pytest.mark.anyio
-async def test_property_roundtrip_binary(path: str, content: bytes) -> None:
-    """Any binary data written to any path should be read back identical."""
+async def test_property_roundtrip_binary_open(path: str, content: bytes) -> None:
+    """Any binary data written with open('wb') is read back with open('rb')."""
     backend = InMemoryMockBackend()
     async with connect(backend=backend) as sbx:
-        await sbx.fs.write_bytes(path, content)
-        assert await sbx.fs.read_bytes(path) == content
+        async with sbx.open(path, "wb") as f:
+            await f.write(content)
+
+        async with sbx.open(path, "rb") as f:
+            assert await f.read() == content

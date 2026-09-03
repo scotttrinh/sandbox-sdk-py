@@ -1,19 +1,43 @@
-"""Filesystem handle implementation for sandboxes."""
+"""Filesystem handle implementation and open() context managers for sandboxes."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
+from sandbox_sdk.file import AsyncSandboxFile
 
 if TYPE_CHECKING:
     from sandbox_sdk.backend import SandboxBackend
 
 
 class AsyncSandboxFilesystem:
-    """Async filesystem facade for a sandbox."""
+    """Async filesystem facade modeled after Python stdlib file and path operations."""
 
     def __init__(self, backend: SandboxBackend, sandbox_id: str) -> None:
         self._backend = backend
         self._sandbox_id = sandbox_id
+
+    def open(
+        self,
+        path: str,
+        mode: str = "r",
+        encoding: str = "utf-8",
+    ) -> AsyncSandboxFile:
+        """Open a file inside the sandbox.
+
+        Returns an async context manager and file object supporting read/write/iteration:
+        ```python
+        async with sbx.open("/workspace/data.txt", "w") as f:
+            await f.write("hello")
+        ```
+        """
+        return AsyncSandboxFile(
+            backend=self._backend,
+            sandbox_id=self._sandbox_id,
+            path=path,
+            mode=mode,
+            encoding=encoding,
+        )
 
     async def write_bytes(self, path: str, data: bytes) -> None:
         """Write raw bytes to a file in the sandbox."""

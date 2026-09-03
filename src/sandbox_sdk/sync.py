@@ -11,6 +11,7 @@ from sandbox_sdk.backend import SandboxBackend
 from sandbox_sdk.client import AsyncSandbox
 from sandbox_sdk.client import connect as async_connect
 from sandbox_sdk.errors import SandboxClosedError
+from sandbox_sdk.file import SyncSandboxFile
 
 
 class SyncSandboxFilesystem:
@@ -18,6 +19,16 @@ class SyncSandboxFilesystem:
 
     def __init__(self, async_sandbox: AsyncSandbox) -> None:
         self._async_sandbox = async_sandbox
+
+    def open(
+        self,
+        path: str,
+        mode: str = "r",
+        encoding: str = "utf-8",
+    ) -> SyncSandboxFile:
+        """Open a file inside the sandbox using stdlib open() semantics."""
+        async_file = self._async_sandbox.open(path, mode=mode, encoding=encoding)
+        return SyncSandboxFile(async_file)
 
     def write_bytes(self, path: str, data: bytes) -> None:
         """Write raw bytes to a file in the sandbox."""
@@ -52,6 +63,15 @@ class SyncSandbox:
         if self._async_sandbox._closed:
             raise SandboxClosedError("Cannot access filesystem on a closed sandbox.")
         return self._fs
+
+    def open(
+        self,
+        path: str,
+        mode: str = "r",
+        encoding: str = "utf-8",
+    ) -> SyncSandboxFile:
+        """Open a file in the sandbox using stdlib open() semantics."""
+        return self.fs.open(path, mode=mode, encoding=encoding)
 
     def close(self) -> None:
         anyio.run(self._async_sandbox.close)
@@ -123,9 +143,11 @@ def connect_sync(
 
     Example:
     ```python
-    with connect_sync() as sbx:
-        sbx.fs.write_text("/hello.txt", "world")
-        assert sbx.fs.read_text("/hello.txt") == "world"
+    with sandbox.connect_sync() as sbx:
+        with sbx.open("/data.txt", "w") as f:
+            f.write("hello")
+        with sbx.open("/data.txt", "r") as f:
+            assert f.read() == "hello"
     ```
     """
     return SyncSandboxConnectOperation(
