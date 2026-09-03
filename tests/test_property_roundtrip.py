@@ -14,7 +14,6 @@ from sandbox_sdk.errors import SandboxPathNotFoundError
 from sandbox_sdk.models import (
     ProcessOptions,
     ProcessOutputChunk,
-    ProcessResult,
     SandboxConfig,
 )
 
@@ -49,20 +48,10 @@ class InMemoryMockBackend(SandboxBackend):
             raise SandboxPathNotFoundError(path)
         return self.files[sandbox_id][path]
 
-    async def run_process(
-        self, sandbox_id: str, options: ProcessOptions, timeout: float | None = None
-    ) -> ProcessResult:
-        raise NotImplementedError
-
     async def start_process(self, sandbox_id: str, options: ProcessOptions) -> str:
         raise NotImplementedError
 
     async def poll_process(self, sandbox_id: str, process_id: str) -> int | None:
-        raise NotImplementedError
-
-    async def wait_process(
-        self, sandbox_id: str, process_id: str, timeout: float | None = None
-    ) -> ProcessResult:
         raise NotImplementedError
 
     async def terminate_process(self, sandbox_id: str, process_id: str) -> None:

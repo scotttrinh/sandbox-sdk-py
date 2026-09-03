@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, Protocol, runtime_checkable
 
-from sandbox_sdk.models import ProcessOptions, ProcessOutputChunk, ProcessResult, SandboxConfig
+from sandbox_sdk.models import ProcessOptions, ProcessOutputChunk, SandboxConfig
 
 
 @runtime_checkable
@@ -35,24 +35,12 @@ class SandboxBackend(Protocol):
         """Read raw bytes from a file path in the sandbox."""
         ...
 
-    async def run_process(
-        self, sandbox_id: str, options: ProcessOptions, timeout: float | None = None
-    ) -> ProcessResult:
-        """Execute a process, wait for it, and capture its output."""
-        ...
-
     async def start_process(self, sandbox_id: str, options: ProcessOptions) -> str:
         """Start a process and return a provider-specific opaque identifier."""
         ...
 
     async def poll_process(self, sandbox_id: str, process_id: str) -> int | None:
         """Return the exit code, or ``None`` while the process is running."""
-        ...
-
-    async def wait_process(
-        self, sandbox_id: str, process_id: str, timeout: float | None = None
-    ) -> ProcessResult:
-        """Wait for a started process and capture its output."""
         ...
 
     async def read_process_output(

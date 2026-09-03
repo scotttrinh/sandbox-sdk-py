@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from types import TracebackType
 
 import anyio
@@ -29,6 +29,13 @@ class SyncSandboxProcessOutputStream:
 
     def close(self) -> None:
         anyio.run(self._async_stream.aclose)
+
+    def __iter__(self) -> Iterator[bytes]:
+        while True:
+            try:
+                yield self.receive()
+            except anyio.EndOfStream:
+                return
 
     def __enter__(self) -> SyncSandboxProcessOutputStream:
         return self
@@ -59,10 +66,6 @@ class SyncSandboxProcess:
         return self._async_process.args
 
     @property
-    def detached(self) -> bool:
-        return self._async_process.detached
-
-    @property
     def returncode(self) -> int | None:
         return self._async_process.returncode
 
@@ -74,14 +77,8 @@ class SyncSandboxProcess:
     def stderr(self) -> SyncSandboxProcessOutputStream:
         return self._stderr
 
-    def poll(self) -> int | None:
-        return anyio.run(self._async_process.poll)
-
-    def wait(self, timeout: float | None = None, *, check: bool = False) -> ProcessResult:
-        async def _wait() -> ProcessResult:
-            return await self._async_process.wait(timeout, check=check)
-
-        return anyio.run(_wait)
+    def wait(self, timeout: float | None = None) -> int:
+        return anyio.run(self._async_process.wait, timeout)
 
     def terminate(self) -> None:
         anyio.run(self._async_process.terminate)
@@ -154,7 +151,7 @@ class SyncSandbox:
     def close(self) -> None:
         anyio.run(self._async_sandbox.close)
 
-    def run(
+    def run_process(
         self,
         args: list[str] | tuple[str, ...],
         *,
@@ -166,24 +163,31 @@ class SyncSandbox:
         """Run a command to completion and capture stdout and stderr."""
 
         async def _run() -> ProcessResult:
-            return await self._async_sandbox.run(
+            return await self._async_sandbox.run_process(
                 args, cwd=cwd, env=env, timeout=timeout, check=check
             )
 
         return anyio.run(_run)
 
-    def start(
+    def open_process(
         self,
         args: list[str] | tuple[str, ...],
         *,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
-        detached: bool = False,
+        timeout: float | None = None,
+        retry_interval: float = 0.1,
     ) -> SyncSandboxProcess:
-        """Start a long-running process and return a Popen-like handle."""
+        """Open a reconnectable process with iterable output streams."""
 
         async def _start() -> AsyncSandboxProcess:
-            return await self._async_sandbox.start(args, cwd=cwd, env=env, detached=detached)
+            return await self._async_sandbox.open_process(
+                args,
+                cwd=cwd,
+                env=env,
+                timeout=timeout,
+                retry_interval=retry_interval,
+            )
 
         return SyncSandboxProcess(anyio.run(_start))
 

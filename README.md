@@ -9,7 +9,7 @@ Generic Python SDK for sandbox-like execution environments (Docker, Vercel Sandb
 - **Natural Connection Context Managers**: `with connect(...)` or `async with connect(...)` handles starting, running, and automatic stopping/destruction of the sandbox.
 - **AnyIO Async Primitives**: Native support for AnyIO concurrency primitives.
 - **Sync & Async Parity**: First-class synchronous API (`connect_sync`) alongside the asynchronous API (`connect`).
-- **Short & Long-Running Processes**: `run()` mirrors `subprocess.run`, while `start()` returns a Popen-like handle with polling, waiting, termination, and explicit detachment.
+- **Short & Long-Running Processes**: `run_process()` captures short jobs, while `open_process()` exposes reconnectable, iterable output streams for long-running work.
 - **Designed for Iter-Coroutine Shared Backends**: Ready for unification of sync and async execution via coroutine driver patterns.
 - **Docker Adapter**: Local sandbox execution backed by Docker.
 - **Strict Typing & Quality**: Verified with `ty`, `ruff`, `poethepoet`, `pytest`, and property-based testing with `hypothesis`.
@@ -91,7 +91,7 @@ print(f"{date.today()} | NYC | Clear | 24 C")
 
 with connect_sync(image="python:3.13-alpine") as sandbox:
     sandbox.fs.write_bytes("/workspace/weather.py", script)
-    result = sandbox.run(
+    result = sandbox.run_process(
         ["python", "weather.py"], cwd="/workspace", check=True
     )
 
@@ -99,28 +99,29 @@ with Path("weather-history.txt").open("ab") as report:
     report.write(result.stdout)
 ```
 
-For longer-running work, `start()` returns an AnyIO-style process handle. Its `stdout` and
-`stderr` properties are independent byte receive streams, and `wait()` still returns the complete
-captured result even after streaming some or all of the output:
+For longer-running work, `open_process()` returns an AnyIO-style process handle. Its `stdout` and
+`stderr` properties are independent, iterable byte receive streams, and `wait()` returns the exit
+code. Reads and exit polling resume from the last byte after transient connection drops:
 
 ```python
 async with connect() as sandbox:
-    process = await sandbox.start(["sh", "-c", "echo ready; echo note >&2"])
+    process = await sandbox.open_process(["sh", "-c", "echo ready; echo note >&2"])
     async for chunk in process.stdout:
         print(chunk.decode(), end="")
-    result = await process.wait(timeout=5)
+    returncode = await process.wait(timeout=5)
 ```
 
 A normal process context waits for completion, mirroring AnyIO's process resource. If the context
 body raises or is cancelled, it terminates and reaps the process before propagating the error.
-Pass `detached=True` to transfer cleanup responsibility to the caller; the streams and process
-handle then remain usable after their context exits:
+The process handle is intentionally independent from the transport connection, so it can reconnect
+until its operation timeout is exhausted:
 
 ```python
 with connect_sync() as sandbox:
-    with sandbox.start(["sh", "-c", "sleep 1; echo ready"], detached=True) as process:
-        pass
-    result = process.wait(timeout=5)
+    with sandbox.open_process(["sh", "-c", "sleep 1; echo ready"], timeout=10) as process:
+        for chunk in process.stdout:
+            print(chunk.decode(), end="")
+    assert process.returncode == 0
 ```
 
 ## Development & Verification

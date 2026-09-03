@@ -19,12 +19,10 @@ from sandbox_sdk.errors import (
     SandboxFilesystemError,
     SandboxPathNotFoundError,
     SandboxProcessError,
-    SandboxTimeoutError,
 )
 from sandbox_sdk.models import (
     ProcessOptions,
     ProcessOutputChunk,
-    ProcessResult,
     SandboxConfig,
 )
 
@@ -183,19 +181,6 @@ class DockerSandboxBackend(SandboxBackend):
             command = f"cd {shlex.quote(options.cwd)} && {command}"
         return command
 
-    async def run_process(
-        self, sandbox_id: str, options: ProcessOptions, timeout: float | None = None
-    ) -> ProcessResult:
-        """Execute a command in the container and capture both output streams."""
-        process_id = await self.start_process(sandbox_id, options)
-        try:
-            result = await self.wait_process(sandbox_id, process_id, timeout)
-        except SandboxTimeoutError:
-            await self.terminate_process(sandbox_id, process_id)
-            await self.wait_process(sandbox_id, process_id)
-            raise
-        return ProcessResult(options.args, result.returncode, result.stdout, result.stderr)
-
     async def start_process(self, sandbox_id: str, options: ProcessOptions) -> str:
         """Start a command using files for provider-independent deferred collection."""
         process_id = uuid.uuid4().hex
@@ -242,38 +227,6 @@ class DockerSandboxBackend(SandboxBackend):
                 raise SandboxProcessError(f"Invalid state for process {process_id}") from err
 
         return await anyio.to_thread.run_sync(_sync_poll)
-
-    async def wait_process(
-        self, sandbox_id: str, process_id: str, timeout: float | None = None
-    ) -> ProcessResult:
-        """Wait for a deferred command and collect its captured output."""
-        process_dir = f"/tmp/.sandbox-sdk-processes/{process_id}"
-
-        async def _wait() -> ProcessResult:
-            while (returncode := await self.poll_process(sandbox_id, process_id)) is None:
-                await anyio.sleep(0.05)
-
-            def _sync_collect() -> tuple[bytes, bytes]:
-                try:
-                    container = self._get_client().containers.get(sandbox_id)
-                    stdout = container.exec_run(["cat", f"{process_dir}/stdout"]).output
-                    stderr = container.exec_run(["cat", f"{process_dir}/stderr"]).output
-                    return stdout, stderr
-                except Exception as err:
-                    raise SandboxProcessError(
-                        f"Failed to collect process {process_id}: {err}"
-                    ) from err
-
-            stdout, stderr = await anyio.to_thread.run_sync(_sync_collect)
-            return ProcessResult((), returncode, stdout, stderr)
-
-        try:
-            if timeout is None:
-                return await _wait()
-            with anyio.fail_after(timeout):
-                return await _wait()
-        except TimeoutError as err:
-            raise SandboxTimeoutError(f"Process timed out after {timeout} seconds") from err
 
     async def terminate_process(self, sandbox_id: str, process_id: str) -> None:
         """Send SIGTERM to a deferred command."""
