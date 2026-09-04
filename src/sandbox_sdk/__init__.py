@@ -11,15 +11,19 @@ from sandbox_sdk.errors import (
     SandboxError,
     SandboxFilesystemError,
     SandboxPathNotFoundError,
+    SandboxProcessError,
     SandboxTimeoutError,
 )
 from sandbox_sdk.file import AsyncSandboxFile, SyncSandboxFile
 from sandbox_sdk.filesystem import AsyncSandboxFilesystem
-from sandbox_sdk.models import SandboxConfig
+from sandbox_sdk.models import ProcessOptions, ProcessOutputChunk, ProcessResult, SandboxConfig
+from sandbox_sdk.process import AsyncSandboxProcess, SandboxProcessOutputStream
 from sandbox_sdk.sync import (
     SyncSandbox,
     SyncSandboxConnectOperation,
     SyncSandboxFilesystem,
+    SyncSandboxProcess,
+    SyncSandboxProcessOutputStream,
     connect_sync,
 )
 
@@ -28,7 +32,11 @@ __all__ = [
     "AsyncSandboxConnectOperation",
     "AsyncSandboxFile",
     "AsyncSandboxFilesystem",
+    "AsyncSandboxProcess",
     "DockerSandboxBackend",
+    "ProcessOptions",
+    "ProcessOutputChunk",
+    "ProcessResult",
     "SandboxBackend",
     "SandboxClosedError",
     "SandboxConfig",
@@ -36,11 +44,15 @@ __all__ = [
     "SandboxError",
     "SandboxFilesystemError",
     "SandboxPathNotFoundError",
+    "SandboxProcessError",
+    "SandboxProcessOutputStream",
     "SandboxTimeoutError",
     "SyncSandbox",
     "SyncSandboxConnectOperation",
     "SyncSandboxFile",
     "SyncSandboxFilesystem",
+    "SyncSandboxProcess",
+    "SyncSandboxProcessOutputStream",
     "connect",
     "connect_sync",
 ]
